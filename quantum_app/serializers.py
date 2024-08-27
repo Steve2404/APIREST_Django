@@ -1,5 +1,6 @@
+from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import User, KeyMaterial, KeyRequest, KeyDelivery
+from .models import KeyMaterial, SAE, TrustedNode, KME
 from django.contrib.auth.hashers import make_password
 
 
@@ -14,19 +15,25 @@ class UserSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class SAESerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SAE
+        fields = '__all__'
+
+
 class KeyMaterialSerializer(serializers.ModelSerializer):
     class Meta:
         model = KeyMaterial
         fields = '__all__'
 
 
-class KeyRequestSerializer(serializers.ModelSerializer):
+class KMESerializer(serializers.ModelSerializer):
     class Meta:
-        model = KeyRequest
+        model = KME
         fields = '__all__'
 
 
-class KeyDeliverySerializer(serializers.ModelSerializer):
+class TrustedNodeSerializer(serializers.ModelSerializer):
     class Meta:
-        model = KeyDelivery
+        model = TrustedNode
         fields = '__all__'

@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'quantum_app',
     'rest_framework_simplejwt',
+    'sslserver',
 ]
 
 REST_FRAMEWORK = {
@@ -45,7 +46,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
-AUTH_USER_MODEL = 'quantum_app.User'
+# AUTH_USER_MODEL = 'quantum_app.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

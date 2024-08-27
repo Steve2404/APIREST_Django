@@ -17,21 +17,24 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from quantum_app.views import UserViewSet, KeyMaterialViewSet, KeyRequestViewSet, KeyDeliveryViewSet
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from quantum_app.views import KeyViewSet, UserRegistrationView, SAEViewSet, KMEViewSet, KeyMaterialViewSet, \
+    TrustedNodeViewSet
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 router = DefaultRouter()
-router.register(r'users', UserViewSet, basename='user')
-router.register(r'keys', KeyMaterialViewSet, basename='key')
-router.register(r'key_requests', KeyRequestViewSet, basename='key_request')
-router.register(r'key_deliveries', KeyDeliveryViewSet, basename='key_delivery')
-
+router.register(r'saes', SAEViewSet)
+router.register(r'kmes', KMEViewSet)
+router.register(r'keymaterials', KeyMaterialViewSet)
+router.register(r'trustednodes', TrustedNodeViewSet)
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include(router.urls)),
+    path('api/v1/', include(router.urls)),
+    path('api/v1/keys/', include([
+        path('<str:slave_SAE_ID>/status/', KeyViewSet.as_view({'get': 'get_status'}), name='get_status'),
+        path('<str:slave_SAE_ID>/enc_keys/', KeyViewSet.as_view({'post': 'get_enc_keys'}), name='get_enc_keys'),
+        path('<str:master_SAE_ID>/dec_keys/', KeyViewSet.as_view({'post': 'get_dec_keys'}), name='get_dec_keys'),
+    ])),
+    path('api/auth/register/', UserRegistrationView.as_view(), name='register_user'),
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh')
 ]
