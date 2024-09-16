@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 import uuid
 
 from .serializers import SAESerializer, KeyMaterialSerializer, TrustedNodeSerializer, KMESerializer
+from .bb84 import generate_bb84_keys
 
 
 class KeyViewSet(viewsets.ViewSet):
@@ -27,7 +28,8 @@ class KeyViewSet(viewsets.ViewSet):
         if keys.exists():
             return Response({
                 'status': 'active',
-                'available_keys': [key.key_id for key in keys],
+                'available_keys_id': [key.key_id for key in keys],
+                'available_keys': [key.key_value for key in keys],
                 'message': 'Des clés sont disponibles pour ce SAE esclave.'
             }, status=status.HTTP_200_OK)
 
@@ -99,3 +101,83 @@ class KeyMaterialViewSet(viewsets.ModelViewSet):
 class TrustedNodeViewSet(viewsets.ModelViewSet):
     queryset = TrustedNode.objects.all()
     serializer_class = TrustedNodeSerializer
+
+
+@api_view(['POST'])
+def generate_keys(request, sae_id):
+    """Générer des clés via le protocole BB84"""
+
+    # Récupérer l'entité SAE d'Alice
+    alice_sae = SAE.objects.get(sae_id=sae_id)
+
+    # Nombre de clés demandées
+    num_keys = request.data.get('num_keys', 3)
+
+    # Exécuter la génération BB84 sur le serveur
+    token = ""
+    keys = generate_bb84_keys(num_keys, token)
+
+    if keys is None:
+        return Response({"message": "Erreur lors de la génération des clés"}, status=500)
+
+    # Stocker les clés générées dans la base de données
+    for key in keys:
+        KeyMaterial.objects.create(
+            kme_id=alice_sae.kme_id,
+            key_value=key,
+            status='active'
+        )
+
+    # Réponse du serveur à Alice
+    return Response({"message": "Clés générées avec succès", "keys": keys}, status=200)
+
+
+@api_view(['GET'])
+def get_keys_for_bob(request, sae_id):
+    """Récupérer les clés générées pour Bob"""
+    # Récupérer l'entité SAE de Bob
+    bob_sae = SAE.objects.get(sae_id=sae_id)
+
+    # Rechercher les clés qui sont générées pour Bob dans la base de données
+    keys = KeyMaterial.objects.filter(kme_id=bob_sae.kme_id, status='active')
+
+    if not keys.exists():
+        return Response({"message": "Aucune clé trouvée pour Bob"}, status=404)
+
+    # Renvoie les clés sous forme de réponse JSON
+    return Response({"keys": [key.key_value for key in keys]})
+
+
+@api_view(['POST'])
+def get_key_with_id(request, master_SAE_ID):
+    """Obtenir une clé en utilisant son identifiant pour Bob"""
+    key_id = request.data.get('key_id')
+    key = KeyMaterial.objects.get(id=key_id, kme_id=master_SAE_ID, status='active')
+
+    if not key:
+        return Response({"message": "Clé introuvable ou inactive"}, status=404)
+
+    return Response({"key_value": key.key_value})
+
+
+@api_view(['POST'])
+def compare_bases_and_calculate_qber(request):
+    """Comparer les bases d'Alice et Bob et calculer le QBER"""
+    # Obtenir les bases et les clés d'Alice et de Bob depuis la requête
+    alice_basis = request.data.get('alice_basis')
+    bob_basis = request.data.get('bob_basis')
+    alice_key = request.data.get('alice_key')
+    bob_key = request.data.get('bob_key')
+
+    if not alice_basis or not bob_basis or not alice_key or not bob_key:
+        return Response({"message": "Données manquantes pour la comparaison des bases"}, status=400)
+
+    # Calculer le QBER (Quantum Bit Error Rate)
+    errors = sum(1 for a, b in zip(alice_key, bob_key) if a != b)
+    qber = errors / len(alice_key) if len(alice_key) > 0 else 0
+
+    # Vérifier si le QBER est acceptable pour continuer l'échange de clé
+    if qber > 0.1:
+        return Response({"message": "Erreur élevée, abandon de la clé", "qber": qber}, status=400)
+
+    return Response({"message": "Clé valide, QBER acceptable", "qber": qber})

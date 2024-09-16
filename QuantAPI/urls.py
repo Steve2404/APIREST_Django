@@ -17,6 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
+from quantum_app import views
 from quantum_app.views import KeyViewSet, UserRegistrationView, SAEViewSet, KMEViewSet, KeyMaterialViewSet, \
     TrustedNodeViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -36,5 +38,13 @@ urlpatterns = [
     ])),
     path('api/auth/register/', UserRegistrationView.as_view(), name='register_user'),
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh')
+    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/v1/keys/<str:sae_id>/generate/', views.generate_keys, name='generate_keys'),
+    # Récupérer les clés pour Bob
+    path('api/v1/keys/<str:sae_id>/get_keys_for_bob/', views.get_keys_for_bob, name='get_keys_for_bob'),
+    # Obtenir une clé en utilisant son identifiant
+    path('api/v1/keys/<str:master_SAE_ID>/get_key_with_id/', views.get_key_with_id, name='get_key_with_id'),
+    # Comparer les bases et calculer le QBER
+    path('api/v1/keys/compare_bases/', views.compare_bases_and_calculate_qber, name='compare_bases_and_calculate_qber'),
+
 ]
