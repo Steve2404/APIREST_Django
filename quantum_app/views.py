@@ -11,6 +11,7 @@ import uuid
 
 from .serializers import SAESerializer, KeyMaterialSerializer, TrustedNodeSerializer, KMESerializer
 from .bb84 import generate_bb84_keys
+import logging
 
 
 class KeyViewSet(viewsets.ViewSet):
@@ -103,33 +104,40 @@ class TrustedNodeViewSet(viewsets.ModelViewSet):
     serializer_class = TrustedNodeSerializer
 
 
+logger = logging.getLogger(__name__)
+
+
 @api_view(['POST'])
 def generate_keys(request, sae_id):
-    """Générer des clés via le protocole BB84"""
+    try:
+        logger.info(f"Requête de génération de clés reçue pour SAE ID: {sae_id}")
 
-    # Récupérer l'entité SAE d'Alice
-    alice_sae = SAE.objects.get(sae_id=sae_id)
+        num_keys = request.data.get('num_keys', 3)
+        num_bits_per_key = request.data.get('num_bits_per_key', 10)
+        logger.info(f"Nombre de clés demandé: {num_keys}")
 
-    # Nombre de clés demandées
-    num_keys = request.data.get('num_keys', 3)
+        token = ""
+        keys = generate_bb84_keys(num_keys, num_bits_per_key, token)
 
-    # Exécuter la génération BB84 sur le serveur
-    token = ""
-    keys = generate_bb84_keys(num_keys, token)
+        if not keys:
+            logger.error("Erreur lors de la génération des clés")
+            return Response({"message": "Erreur lors de la génération des clés"}, status=500)
 
-    if keys is None:
-        return Response({"message": "Erreur lors de la génération des clés"}, status=500)
+        logger.info("Clés générées avec succès")
 
-    # Stocker les clés générées dans la base de données
-    for key in keys:
-        KeyMaterial.objects.create(
-            kme_id=alice_sae.kme_id,
-            key_value=key,
-            status='active'
-        )
+        # Récupérer l'instance de KME correspondante au SAE_ID
+        kme = get_object_or_404(KME, kme_id=sae_id)
 
-    # Réponse du serveur à Alice
-    return Response({"message": "Clés générées avec succès", "keys": keys}, status=200)
+        # Stocker les clés générées dans la base de données en format natif
+        for key in keys:
+            key_str = ','.join(map(str, key))  # Convertit la liste d'entiers en chaîne de caractères
+            KeyMaterial.objects.create(kme_id=kme, key_value=key_str, status='active')
+
+        return Response({"message": "Clés générées avec succès", "keys": keys}, status=200)
+
+    except Exception as e:
+        logger.exception("Une erreur s'est produite")
+        return Response({"message": "Erreur interne du serveur"}, status=500)
 
 
 @api_view(['GET'])
@@ -143,7 +151,7 @@ def get_keys_for_bob(request, sae_id):
 
     if not keys.exists():
         return Response({"message": "Aucune clé trouvée pour Bob"}, status=404)
-
+    print(keys)
     # Renvoie les clés sous forme de réponse JSON
     return Response({"keys": [key.key_value for key in keys]})
 

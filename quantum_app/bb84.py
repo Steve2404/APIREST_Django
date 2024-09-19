@@ -6,13 +6,18 @@ from .models import KeyMaterial
 import uuid
 
 
-def generate_bb84_keys(num_keys, num_bits_per_key, token):
+def generate_bb84_keys(num_keys, num_bits_per_key, token=""):
     """Générer plusieurs clés via le protocole BB84"""
 
     # IBMProvider.save_account(token, overwrite=True)
 
     # Initialisation des listes de clés
     all_keys = []
+
+    try:
+        num_bits_per_key = int(num_bits_per_key)
+    except ValueError:
+        raise ValueError("Le nombre de bits par clé doit être un entier valide.")
 
     for _ in range(num_keys):
         # Génération aléatoire des bits et bases pour chaque clé
