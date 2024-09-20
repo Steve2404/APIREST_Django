@@ -2,42 +2,18 @@ from django.contrib.auth.models import User
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
-from .models import KeyMaterial, SAE, KME, TrustedNode
+from .models import KeyMaterial, SAE, KME
 from django.shortcuts import get_object_or_404
 import uuid
 
-from .serializers import SAESerializer, KeyMaterialSerializer, TrustedNodeSerializer, KMESerializer
+from .serializers import SAESerializer, KeyMaterialSerializer, KMESerializer
 from .bb84 import generate_bb84_keys
-import logging
 
 
 class KeyViewSet(viewsets.ViewSet):
-
-    @action(detail=True, methods=['get'], url_path='status')
-    def get_status(self, request, slave_SAE_ID=None):
-        """
-        Vérifie le statut des clés disponibles pour le SAE esclave donné.
-        """
-        # Obtenez l'objet SAE correspondant à l'ID fourni
-        slave_sae = get_object_or_404(SAE, sae_id=slave_SAE_ID)
-        # Trouvez toutes les clés actives associées au KME de ce SAE
-        keys = KeyMaterial.objects.filter(kme_id=slave_sae.kme_id, status='active')
-
-        if keys.exists():
-            return Response({
-                'status': 'active',
-                'available_keys_id': [key.key_id for key in keys],
-                'available_keys': [key.key_value for key in keys],
-                'message': 'Des clés sont disponibles pour ce SAE esclave.'
-            }, status=status.HTTP_200_OK)
-
-        return Response({
-            'status': 'inactive',
-            'message': 'Aucune clé active n\'est disponible pour ce SAE esclave.'
-        }, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'], url_path='enc_keys')
     def get_enc_keys(self, request, slave_SAE_ID=None):
@@ -62,6 +38,50 @@ class KeyViewSet(viewsets.ViewSet):
         # Obtenez l'objet KeyMaterial correspondant à l'ID fourni et au KME associé au SAE maître
         key = get_object_or_404(KeyMaterial, key_id=key_id, kme_id=master_SAE_ID, status='active')
         return Response({'key_value': key.key_value}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='generate')
+    def generate_keys(self, request, sae_id):
+        """Générer des clés pour un SAE spécifique via le protocole BB84."""
+        sae = get_object_or_404(SAE, sae_id=sae_id)
+        num_keys = request.data.get('number', 1)  # Par défaut, 1 clé si le nombre n'est pas spécifié
+        key_size = request.data.get('size', 256)  # Par défaut, taille de clé à 256 bits
+
+        # Assurez-vous que le KME supporte la taille des clés demandées
+        kme = sae.kme_id
+        if key_size % 8 != 0 or key_size < kme.min_key_size or key_size > kme.max_key_size:
+            return Response(
+                {
+                    "message":
+                        "La taille de clé doit être un multiple de 8 et comprise entre la taille min/max supportée."},
+                status=400)
+
+        # Génération des clés via BB84
+        keys = generate_bb84_keys(num_keys, key_size)
+
+        # Sauvegarde dans la base de données
+        for key in keys:
+            KeyMaterial.objects.create(kme_id=kme, key_value=key, key_size=key_size, status='active')
+
+        return Response({"message": f"{num_keys} clés générées et stockées dans KME."}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='status')
+    def get_status(self, request, slave_SAE_ID):
+        """Obtenir le statut des clés pour un SAE spécifique."""
+        sae = get_object_or_404(SAE, sae_id=slave_SAE_ID)
+        kme = sae.kme_id
+        status_data = {
+            "source_KME_ID": kme.source_KME_ID,
+            "target_KME_ID": kme.target_KME_ID,
+            "master_SAE_ID": "XXXX",  # Exemple, peut être dynamique
+            "slave_SAE_ID": slave_SAE_ID,
+            "key_size": kme.key_size,
+            "stored_key_count": kme.stored_key_count,
+            "max_key_count": kme.max_key_count,
+            "max_key_per_request": kme.max_key_per_request,
+            "max_key_size": kme.max_key_size,
+            "min_key_size": kme.min_key_size,
+        }
+        return Response(status_data)
 
 
 class UserRegistrationView(APIView):
@@ -97,47 +117,6 @@ class KMEViewSet(viewsets.ModelViewSet):
 class KeyMaterialViewSet(viewsets.ModelViewSet):
     queryset = KeyMaterial.objects.all()
     serializer_class = KeyMaterialSerializer
-
-
-class TrustedNodeViewSet(viewsets.ModelViewSet):
-    queryset = TrustedNode.objects.all()
-    serializer_class = TrustedNodeSerializer
-
-
-logger = logging.getLogger(__name__)
-
-
-@api_view(['POST'])
-def generate_keys(request, sae_id):
-    try:
-        logger.info(f"Requête de génération de clés reçue pour SAE ID: {sae_id}")
-
-        num_keys = request.data.get('num_keys', 3)
-        num_bits_per_key = request.data.get('num_bits_per_key', 10)
-        logger.info(f"Nombre de clés demandé: {num_keys}")
-
-        token = ""
-        keys = generate_bb84_keys(num_keys, num_bits_per_key, token)
-
-        if not keys:
-            logger.error("Erreur lors de la génération des clés")
-            return Response({"message": "Erreur lors de la génération des clés"}, status=500)
-
-        logger.info("Clés générées avec succès")
-
-        # Récupérer l'instance de KME correspondante au SAE_ID
-        kme = get_object_or_404(KME, kme_id=sae_id)
-
-        # Stocker les clés générées dans la base de données en format natif
-        for key in keys:
-            key_str = ','.join(map(str, key))  # Convertit la liste d'entiers en chaîne de caractères
-            KeyMaterial.objects.create(kme_id=kme, key_value=key_str, status='active')
-
-        return Response({"message": "Clés générées avec succès", "keys": keys}, status=200)
-
-    except Exception as e:
-        logger.exception("Une erreur s'est produite")
-        return Response({"message": "Erreur interne du serveur"}, status=500)
 
 
 @api_view(['GET'])

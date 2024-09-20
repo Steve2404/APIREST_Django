@@ -19,27 +19,28 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from quantum_app import views
-from quantum_app.views import KeyViewSet, UserRegistrationView, SAEViewSet, KMEViewSet, KeyMaterialViewSet, \
-    TrustedNodeViewSet
+from quantum_app.views import KeyViewSet, UserRegistrationView, SAEViewSet, KMEViewSet, KeyMaterialViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 router = DefaultRouter()
 router.register(r'saes', SAEViewSet)
 router.register(r'kmes', KMEViewSet)
 router.register(r'keymaterials', KeyMaterialViewSet)
-router.register(r'trustednodes', TrustedNodeViewSet)
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/', include(router.urls)),
     path('api/v1/keys/', include([
-        path('<str:slave_SAE_ID>/status/', KeyViewSet.as_view({'get': 'get_status'}), name='get_status'),
+
         path('<str:slave_SAE_ID>/enc_keys/', KeyViewSet.as_view({'post': 'get_enc_keys'}), name='get_enc_keys'),
         path('<str:master_SAE_ID>/dec_keys/', KeyViewSet.as_view({'post': 'get_dec_keys'}), name='get_dec_keys'),
+        path('<str:master_SAE_ID>/generate/', KeyViewSet.as_view({'post': 'generate_keys'}), name='generate_keys'),
+        path('<str:slave_SAE_ID>/status/', KeyViewSet.as_view({'get': 'get_status'}), name='get_status'),
+
     ])),
     path('api/auth/register/', UserRegistrationView.as_view(), name='register_user'),
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/v1/keys/<str:sae_id>/generate/', views.generate_keys, name='generate_keys'),
     # Récupérer les clés pour Bob
     path('api/v1/keys/<str:sae_id>/get_keys_for_bob/', views.get_keys_for_bob, name='get_keys_for_bob'),
     # Obtenir une clé en utilisant son identifiant
